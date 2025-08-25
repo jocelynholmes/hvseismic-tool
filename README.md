@@ -1,4 +1,4 @@
-# HVSeismic Tool：基于hvsrpy的地震数据HVSR分析工具
+# HVSRseismic Tool：基于hvsrpy的地震数据HVSR分析工具
 基于hvsrpy的地震数据处理工具，适用于水平垂直谱比（HVSR）分析，支持批量处理、质量控制与多维度可视化。
 
 <div align="center">
