@@ -11,6 +11,13 @@ import os
 import logging
 from config import SELECTED_STATIONS, OUTPUT_DIR
 import pickle
+import signal
+
+# 设置信号处理，忽略BrokenPipeError
+def handle_sigpipe(signal, frame):
+    logger.warning("接收到SIGPIPE信号，忽略处理")
+
+signal.signal(signal.SIGPIPE, handle_sigpipe)
 
 # 全局日志配置
 def setup_global_logger():
@@ -95,10 +102,18 @@ def main():
         # 第一阶段：执行永久性处理
         logger.info(f"\n===== 开始永久性处理（批次 {current_batch}/{total_batches}） =====")
         try:
-            with mp.Pool(pool_size) as pool:
-                processed_paths = pool.map(process_permanent, batch_windows)
+            # 使用自定义进程池，设置maxtasksperchild避免长期运行的进程
+            with mp.Pool(pool_size, maxtasksperchild=10) as pool:
+                # 使用imap代替map，逐个获取结果，减少内存占用
+                processed_paths = list(pool.imap(process_permanent, batch_windows))
+        except BrokenPipeError:
+            logger.warning("永久性处理中检测到BrokenPipeError，尝试重新处理该批次")
+            # 重试一次
+            with mp.Pool(pool_size, maxtasksperchild=10) as pool:
+                processed_paths = list(pool.imap(process_permanent, batch_windows))
         except Exception as e:
             logger.error(f"永久性处理批次 {current_batch} 失败: {str(e)}")
+            logger.error(traceback.format_exc())
             continue
         
         # 统计永久性处理结果
@@ -110,10 +125,16 @@ def main():
         valid_pairs = [(path, win) for path, win in zip(processed_paths, batch_windows) if path]
         
         try:
-            with mp.Pool(pool_size) as pool:
+            with mp.Pool(pool_size, maxtasksperchild=10) as pool:
+                # 使用starmap处理带多个参数的函数
+                results = pool.starmap(process_nonpermanent, valid_pairs)
+        except BrokenPipeError:
+            logger.warning("非永久性处理中检测到BrokenPipeError，尝试重新处理该批次")
+            with mp.Pool(pool_size, maxtasksperchild=10) as pool:
                 results = pool.starmap(process_nonpermanent, valid_pairs)
         except Exception as e:
             logger.error(f"非永久性处理批次 {current_batch} 失败: {str(e)}")
+            logger.error(traceback.format_exc())
             continue
         
         # 统计非永久性处理结果
@@ -123,9 +144,11 @@ def main():
         # 第三阶段：生成可视化结果
         logger.info(f"\n===== 开始生成可视化结果（批次 {current_batch}/{total_batches}） =====")
         try:
-            batch_plot_hvsr(show=False)
+            #batch_plot_hvsr(show=False)
+            pass
         except Exception as e:
             logger.error(f"批量绘制HVSR失败: {str(e)}")
+            logger.error(traceback.format_exc())
         
         # 绘制3C类图（分批次）
         output_dir = os.path.join(os.getenv('OUTPUT_DIR', "/home/mm/短周期地震仪/SAC_DATA/HVSR_RESULT"), "plots")
@@ -138,7 +161,7 @@ def main():
             for window in batch_windows:
                 if window["station"] == station:
                     try:
-                        plot_3c_components(station, window["date"], window["time_window"], output_dir=output_dir)
+                        plot_3c_components(station, window["date"], window["time_window"], output_dir=output_dir, skip_existing=False)
                     except Exception as e:
                         logger.error(f"绘制3C类图失败: {station} {window['date']} {window['time_window']} - {str(e)}")
                         logger.error(traceback.format_exc())  # 记录完整堆栈信息
@@ -226,4 +249,7 @@ def main():
     logger.info(f"\n所有处理完成！总耗时: {total_time:.2f} 秒")
 
 if __name__ == "__main__":
+    # 在Windows系统上需要设置multiprocessing的启动方式
+    if os.name == 'nt':
+        mp.set_start_method('spawn')
     main()

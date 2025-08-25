@@ -40,17 +40,17 @@ def process_nonpermanent(processed_path, window_info):
     4. 手动质量控制（基于振幅和信噪比）
     5. 保存结果
     """
-    station = window_info["station"]
-    date = window_info["date"]
-    time_window = window_info["time_window"]
-    logger = setup_nonpermanent_logger(station, date, time_window)
-
-    # 输出路径
-    output_dir = os.path.join(OUTPUT_DIR, station, date)
-    os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f"{time_window}_hvsr.pkl")
-
     try:
+        station = window_info["station"]
+        date = window_info["date"]
+        time_window = window_info["time_window"]
+        logger = setup_nonpermanent_logger(station, date, time_window)
+
+        # 输出路径
+        output_dir = os.path.join(OUTPUT_DIR, station, date)
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, f"{time_window}_hvsr.pkl")
+
         # 1. 加载永久性处理后的数据
         with open(processed_path, "rb") as f:
             recording = pickle.load(f)
@@ -77,7 +77,7 @@ def process_nonpermanent(processed_path, window_info):
 
         # 4.2 基于振幅最大值筛选
         amplitudes = hvsr_result.amplitude  # 所有窗口的振幅数据
-        max_amplitude_threshold = 10  # 振幅最大值阈值
+        max_amplitude_threshold = 8  # 振幅最大值阈值
         window_max_amp = amplitudes.max(axis=1)  # 每个窗口的振幅最大值
         amp_mask = window_max_amp <= max_amplitude_threshold  # 振幅有效掩码
         logger.info(f"振幅筛选后有效窗口数: {amp_mask.sum()}")
@@ -101,7 +101,6 @@ def process_nonpermanent(processed_path, window_info):
             noise = data_vertical.amplitude  # 垂直分量数值
             if fs is None:
                 fs = 1 / data.dt_in_seconds  # 采样率 = 1/时间步长
-                print(f'fs')
             snr = calculate_snr(data, noise, fs)
             snr_values.append(snr)
             snr_mask.append(snr > 1)  # SNR>1为有效
@@ -135,7 +134,11 @@ def process_nonpermanent(processed_path, window_info):
         return output_path
 
     except Exception as e:
-        logger.error(f"处理失败: {str(e)}")
+        # 尝试记录错误日志
+        try:
+            logger.error(f"处理失败: {str(e)}")
+        except:
+            print(f"处理 {station}/{date}/{time_window} 失败: {str(e)}")
         return None
 
 # 示例调用（需根据实际情况传入参数）

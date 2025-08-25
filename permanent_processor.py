@@ -26,23 +26,24 @@ def process_permanent(window_info):
     4. 滤波（若配置）
     5. 保存处理后的数据（可复用）
     """
-    station = window_info["station"]
-    date = window_info["date"]
-    time_window = window_info["time_window"]
-    component_paths = window_info["components"]
-    logger = setup_permanent_logger(station, date, time_window)
-
-    # 输出路径
-    output_dir = os.path.join(PROCESSED_DIR, station, date)
-    os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f"{time_window}_permanent.pkl")
-
-    # 若已处理，直接返回
-    if os.path.exists(output_path):
-        logger.info(f"已存在永久性处理结果，跳过")
-        return output_path
-
     try:
+        station = window_info["station"]
+        date = window_info["date"]
+        time_window = window_info["time_window"]
+        component_paths = window_info["components"]
+        logger = setup_permanent_logger(station, date, time_window)
+
+        # 输出路径
+        output_dir = os.path.join(PROCESSED_DIR, station, date)
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, f"{time_window}_permanent.pkl")
+
+        # 若已处理，直接返回
+        """
+        if os.path.exists(output_path):
+            logger.info(f"已存在永久性处理结果，跳过")
+            return output_path
+        """
         # 1. 加载原始数据
         recording = hvsrpy.read_single(fnames=component_paths)
         dt_in_seconds = recording.ns.dt_in_seconds
@@ -64,5 +65,9 @@ def process_permanent(window_info):
         return output_path
 
     except Exception as e:
-        logger.error(f"处理失败: {str(e)}")
+        # 尝试记录错误日志
+        try:
+            logger.error(f"处理失败: {str(e)}")
+        except:
+            print(f"处理 {station}/{date}/{time_window} 失败: {str(e)}")
         return None

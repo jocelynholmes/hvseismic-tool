@@ -12,6 +12,10 @@ from matplotlib.patches import Patch
 from tqdm import tqdm 
 from config import OUTPUT_DIR, SELECTED_STATIONS, PROCESSED_DIR
 import multiprocessing as mp
+from multiprocessing.pool import Pool
+
+# 确保matplotlib不使用GUI后端
+plt.switch_backend('Agg')
 
 # ------------------------------
 # 日志配置
@@ -161,8 +165,12 @@ def plot_hvsr_result(station, date, time_window, output_dir=None, show=False, sk
 # ------------------------------
 def plot_hvsr_wrapper(args):
     # 接收skip_existing参数
-    s, d, tw, output_dir, show, skip_existing = args
-    return plot_hvsr_result(s, d, tw, output_dir, show, skip_existing)
+    try:
+        s, d, tw, output_dir, show, skip_existing = args
+        return plot_hvsr_result(s, d, tw, output_dir, show, skip_existing)
+    except Exception as e:
+        logger.error(f"plot_hvsr_wrapper出错: {str(e)}")
+        return None, None
 
 
 # ------------------------------
@@ -202,11 +210,26 @@ def batch_plot_hvsr(station=None, date=None, output_dir=None, show=False, batch_
                     current_output_dir = os.path.join(output_dir, s, d)
                     for tw_idx in range(0, len(time_windows), batch_size):
                         batch_tw = time_windows[tw_idx:tw_idx + batch_size]
-                        with mp.Pool(cpu_count) as pool:
-                            # 只传递current_output_dir，不再重复添加s和d
-                            args_list = [(s, d, tw, current_output_dir, show, skip_existing) for tw in batch_tw]
-                            pool.map(plot_hvsr_wrapper, args_list)
-                        gc.collect()
+                        # 使用try-except包裹进程池操作
+                        try:
+                            with Pool(cpu_count) as pool:
+                                # 只传递current_output_dir，不再重复添加s和d
+                                args_list = [(s, d, tw, current_output_dir, show, skip_existing) for tw in batch_tw]
+                                # 使用imap代替map，逐个获取结果，减少内存占用
+                                for result in pool.imap(plot_hvsr_wrapper, args_list):
+                                    pass  # 我们只需要执行，不需要处理结果
+                            gc.collect()
+                        except BrokenPipeError:
+                            logger.warning("检测到BrokenPipeError，正在重新尝试...")
+                            # 重试一次
+                            with Pool(cpu_count) as pool:
+                                args_list = [(s, d, tw, current_output_dir, show, skip_existing) for tw in batch_tw]
+                                for result in pool.imap(plot_hvsr_wrapper, args_list):
+                                    pass
+                            gc.collect()
+                        except Exception as e:
+                            logger.error(f"批量处理出错: {str(e)}")
+                            continue
 
     logger.info(f"批量绘制完成，结果保存在: {output_dir}")
 
@@ -262,69 +285,74 @@ def batch_export_stats(station=None, date=None):
     logger.info("批量导出统计数据完成")
 
 
-# ------------------------------
-# 台站结果汇总（保持不变）
-# ------------------------------
-def summarize_site_results(station, output_dir=None):
-    output_dir = output_dir or os.path.join(OUTPUT_DIR, "summaries")
-    os.makedirs(output_dir, exist_ok=True)
-    station_dir = os.path.join(OUTPUT_DIR, station)
-    
-    if not os.path.isdir(station_dir):
-        logger.error(f"台站目录不存在: {station_dir}")
-        return
-
-    summary_path = os.path.join(output_dir, f"{station}_summary.csv")
-    header_written = False
-
-    for date in os.listdir(station_dir):
-        date_dir = os.path.join(station_dir, date)
-        if not os.path.isdir(date_dir):
-            continue
-
-        for file in os.listdir(date_dir):
-            if file.endswith('_peaks.txt'):
-                time_window = file.split('_')[0]
-                peak_file = os.path.join(date_dir, file)
-                try:
-                    with open(peak_file, 'r') as f:
-                        lines = f.readlines()
-                        peak_freq = float(lines[0].split(':')[1].strip())
-                        peak_amp = float(lines[1].split(':')[1].strip())
-                        valid_windows = lines[2].split(':')[1].strip()
-
-                        df = pd.DataFrame({
-                            'date': [date], 'time_window': [time_window],
-                            'peak_frequency': [peak_freq], 'peak_amplitude': [peak_amp],
-                            'valid_windows': [valid_windows]
-                        })
-                        df.to_csv(summary_path, mode='a', header=not header_written, index=False)
-                        header_written = True
-
-                except Exception as e:
-                    logger.error(f"读取峰值文件失败: {peak_file} - {str(e)}")
-
+def summarize_site_results(station):
+    """汇总台站结果（添加此函数以解决main.py中的引用问题）"""
     try:
-        df = pd.read_csv(summary_path)
-        freq_mean = df['peak_frequency'].mean()
-        freq_std = df['peak_frequency'].std() if len(df) > 1 else np.nan
-        amp_mean = df['peak_amplitude'].mean()
-        amp_std = df['peak_amplitude'].std() if len(df) > 1 else np.nan
-
-        logger.info(f"台站 {station} 汇总统计:")
-        logger.info(f"  峰值频率均值: {freq_mean:.4f} Hz")
-        logger.info(f"  峰值频率标准差: {freq_std:.4f} Hz")
-        logger.info(f"  峰值振幅均值: {amp_mean:.4f}")
-        logger.info(f"  峰值振幅标准差: {amp_std:.4f}")
-
+        station_dir = os.path.join(OUTPUT_DIR, station)
+        if not os.path.isdir(station_dir):
+            logger.warning(f"台站目录不存在: {station_dir}")
+            return
+        
+        # 收集所有日期和时间窗口的峰值信息
+        peak_data = []
+        dates = [d for d in os.listdir(station_dir) if os.path.isdir(os.path.join(station_dir, d))]
+        
+        for date in dates:
+            date_dir = os.path.join(station_dir, date)
+            time_windows = [f.split('_')[0] for f in os.listdir(date_dir) if f.endswith('_hvsr.pkl')]
+            
+            for tw in time_windows:
+                result_path = os.path.join(date_dir, f"{tw}_hvsr.pkl")
+                if os.path.exists(result_path):
+                    try:
+                        with open(result_path, "rb") as f:
+                            hvsr = pickle.load(f)
+                        peak_freq, peak_amp = hvsr.mean_curve_peak()
+                        valid_count = hvsr.valid_curve_boolean_mask.sum()
+                        total_count = hvsr.n_curves
+                        
+                        peak_data.append({
+                            'date': date,
+                            'time_window': tw,
+                            'peak_frequency': peak_freq,
+                            'peak_amplitude': peak_amp,
+                            'valid_windows': f"{valid_count}/{total_count}"
+                        })
+                    except Exception as e:
+                        logger.error(f"处理 {result_path} 时出错: {str(e)}")
+        
+        # 保存汇总结果
+        if peak_data:
+            df = pd.DataFrame(peak_data)
+            output_dir = os.path.join(OUTPUT_DIR, "summary")
+            os.makedirs(output_dir, exist_ok=True)
+            output_path = os.path.join(output_dir, f"{station}_summary.csv")
+            df.to_csv(output_path, index=False)
+            logger.info(f"台站 {station} 汇总结果已保存至: {output_path}")
+            
+            # 绘制峰值频率随时间变化图
+            plt.figure(figsize=(12, 6))
+            plt.plot(pd.to_datetime(df['date'] + ' ' + df['time_window']), df['peak_frequency'], 'ko')
+            plt.xlabel('Time')
+            plt.ylabel('Peak Frequency (Hz)')
+            plt.title(f'Peak Frequency Variation - {station}')
+            plt.grid(True)
+            plt.xticks()
+            plt.tight_layout()
+            plt.savefig(os.path.join(output_dir, f"{station}_peak_freq_trend.png"), dpi=150)
+            plt.close()
+            
+        return peak_data
+        
     except Exception as e:
-        logger.error(f"计算汇总统计失败: {str(e)}")
+        logger.error(f"汇总台站 {station} 结果失败: {str(e)}")
+        return None
 
 
 # ------------------------------
 # 绘制3C分量图（支持跳过功能开关）
 # ------------------------------
-def plot_3c_components(station, date, time_window, output_dir=None, show=False, skip_existing=False):
+def plot_3c_components(station, date, time_window, output_dir=None, show=False, skip_existing=True):
     """
     绘制3C分量图（修复有效窗口切片与归一化问题）
     
@@ -376,7 +404,7 @@ def plot_3c_components(station, date, time_window, output_dir=None, show=False, 
         normalized_ew = normalize(ew_data)
         normalized_vt = normalize(vt_data)
 
-        window_len = int(30 * fs)  # 30秒对应的采样点数
+        window_len = int(30 * fs)  # 30秒对应的采样点数（与非永久性处理窗口长度一致）
         valid_indices = np.where(hvsr.valid_curve_boolean_mask)[0]
         logger.info(f"有效窗口数: {len(valid_indices)}")
 

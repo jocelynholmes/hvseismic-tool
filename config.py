@@ -8,7 +8,7 @@ BASE_DIR = os.getenv('BASE_DIR', "/home/mm/短周期地震仪/SAC_DATA")
 PROCESSED_DIR = os.getenv('PROCESSED_DIR', "/home/mm/短周期地震仪/SAC_DATA/PROCESSED_DATA")  # 永久性处理结果
 OUTPUT_DIR = os.getenv('OUTPUT_DIR', "/home/mm/短周期地震仪/SAC_DATA/HVSR_RESULT")        # 非永久性处理结果
 COMPONENT_SUFFIXES = ["BNN", "BNE", "BNZ"]               # 三分量标识
-SELECTED_STATIONS = [ "W13","W12","W10","W11","W15","W14","W16","W17","W1","W27","W30","W5","W32(1)","W6","W7"]                   # 目标台站（留空处理所有）
+SELECTED_STATIONS = ["W27","W30","W5","W32(1)","W6","W7"]                   # 目标台站（留空处理所有）
 
 # 永久性处理参数（降采样、滤波等不可逆操作）
 def get_permanent_settings():

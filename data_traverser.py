@@ -18,6 +18,10 @@ def get_all_time_window_paths():
     all_windows = []
 
     # 筛选目标台站
+    if not os.path.exists(BASE_DIR):
+        print(f"错误: 基础目录不存在 - {BASE_DIR}")
+        return all_windows
+        
     all_stations = [s for s in os.listdir(BASE_DIR) if os.path.isdir(os.path.join(BASE_DIR, s))]
     target_stations = SELECTED_STATIONS if SELECTED_STATIONS else all_stations
 
@@ -58,4 +62,3 @@ def get_all_time_window_paths():
 
     print(f"共识别有效时间段: {len(all_windows)}个")
     return all_windows
-    
