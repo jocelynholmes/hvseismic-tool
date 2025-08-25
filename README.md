@@ -40,7 +40,7 @@
 
 ## 处理流程图
 <div align="center">
-  <img src="images/hvseismic_workflow.png" alt="HVSeismic Tool处理流程图" width="85%" style="border: 1px solid #ddd; padding: 15px; border-radius: 8px;"/>
+  <img src="images/hvsr_workflow.png" alt="HVSeismic Tool处理流程图" width="85%" style="border: 1px solid #ddd; padding: 15px; border-radius: 8px;"/>
   <p style="color: #666; font-size: 0.9em; margin-top: 10px;">图1：HVSeismic Tool完整处理流程</p>
 </div>
 
