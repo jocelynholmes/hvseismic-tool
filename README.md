@@ -14,7 +14,7 @@
 
 ## 作者信息
 - **姓名**：jocelyn  
-- **专业**：中山大学地球物理专业（2022级）  
+  
 
 
 ## 版权声明
@@ -25,7 +25,7 @@
 - 官方仓库：[jpvantassel/hvsrpy](https://github.com/jpvantassel/hvsrpy)  
 
 ### 2. 本项目版权
-© 2024 jocelyn（中山大学），基于GPLv3协议开源。
+© 2024 jocelyn，基于GPLv3协议开源。
 
 
 ## 核心功能
